@@ -73,7 +73,7 @@
     let lastPos=null,lastMove=Date.now(); let busyUntil=0,isPet=false; let waveBuf=[],nodBuf=[];
 
     /* Voice vars */
-    let RMS=0,voiceStart=0,lastLove=0; const TH=0.045,DUR=1000,COOL=2500,LOUD=0.12; navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{const ac=new (AudioContext||webkitAudioContext)(); const src=ac.createMediaStreamSource(s); const an=ac.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize); (function aud(){an.getByteTimeDomainData(buf); let sum=0; buf.forEach(b=>{const v=(b-128)/128; sum+=v*v;}); RMS=Math.sqrt(sum/buf.length); RMS>TH? voiceStart||(voiceStart=Date.now()):voiceStart=0; requestAnimationFrame(aud);})();});
+    let RMS=0,voiceStart=0,lastLove=0; const TH=0.045,DUR=1000,COOL=2500,LOUD=0.12; navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode: 'user' } }).then(s=>{const ac=new (AudioContext||webkitAudioContext)(); const src=ac.createMediaStreamSource(s); const an=ac.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize); (function aud(){an.getByteTimeDomainData(buf); let sum=0; buf.forEach(b=>{const v=(b-128)/128; sum+=v*v;}); RMS=Math.sqrt(sum/buf.length); RMS>TH? voiceStart||(voiceStart=Date.now()):voiceStart=0; requestAnimationFrame(aud);})();});
 
     /* Deco util: hearts / swirl only */
     const deco=(type,n,d)=>{for(let i=0;i<n;i++){const el=document.createElement('div');el.className=type;host.appendChild(el); el.style.left=Math.random()*100+'%'; el.style.top='55%'; requestAnimationFrame(()=>el.style.animation=`${type==='heart'?'floatHeart':'spinSwirl'} ${d}ms ease-out forwards ${i*120}ms`); setTimeout(()=>el.remove(),d);} };
@@ -82,7 +82,7 @@
     const list=['happy','love','blush','kiss','scared','angry','blink','winkLeft','winkRight','surprised','stare','crying']; const busy=t=>t<busyUntil; const setExpr=(n,d=1200,f=false)=>{if(!f&&busy(Date.now()))return; face.classList.remove(...list.filter(e=>e!==n)); face.classList.add(n); if(d>0&&!['crying'].includes(n)) setTimeout(()=>face.classList.remove(n),d);}; const anim=(a,d)=>{face.classList.add(a); setTimeout(()=>face.classList.remove(a),d);};
 
     /* Init */
-    handTrack.startVideo(video).then(ok=>{if(ok) handTrack.load(params).then(m=>{model=m;loop();});});
+    handTrack.startVideo(video, { facingMode: 'user' }).then(ok=>{if(ok) handTrack.load(params).then(m=>{model=m;loop();});});
 
     function loop(){model.detect(video).then(pred=>{ctx.clearRect(0,0,canvas.width,canvas.height); const now=Date.now(); let moved=false;
       if(voiceStart && now-voiceStart>DUR && now-lastLove>COOL){ lastLove=now; RMS>LOUD? setExpr('scared',1600,true):setExpr('love',2000,true); deco('heart',10,1500); busyUntil=now+1400; voiceStart=0; }
