@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cute Dual‑Eye Robot – No Stars</title>
+  <style>
+    /* === Global layout unchanged (eyes, brows, cheeks, hearts, swirl) === */
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#181824;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;overflow:hidden;}
+    #video{display:none}
+    #overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:0;}
+
+    /* Eyes container */
+    #face{position:fixed;inset:0;display:flex;justify-content:space-between;align-items:center;padding:0 10vw;z-index:2;pointer-events:none;}
+    .eye{width:22vmin;height:45vmin;background:#7aff27;border-radius:26%;filter:drop-shadow(0 0 12px rgba(0,255,0,.55));transition:all .12s ease;}
+    .eye.left{order:1;} .eye.right{order:2;}
+    .brow{position:absolute;width:14vmin;height:3vmin;background:#7aff27;border-radius:50%;top:18%;transition:all .12s ease;opacity:0;}
+    .brow.left{left:22%;} .brow.right{right:22%;}
+    .cheek{position:absolute;top:67%;width:6vmin;height:6vmin;background:#ff9ab3;border-radius:50%;opacity:0;transition:opacity .15s ease;}
+    .cheek.left{left:28%;} .cheek.right{right:28%;}
+
+    /* Decoration host */
+    #decorHost{position:fixed;inset:0;pointer-events:none;z-index:3;}
+
+    /* Hearts */
+    .heart{position:absolute;width:8vmin;height:8vmin;background:#ff6fa3;clip-path:path('M24.999 4.132c-4.752-7.006-15.574-.693-12.5 5.868 3.073-6.56-7.748-12.874-12.5-5.868-6.71 9.884 12.5 19.868 12.5 19.868s19.211-9.984 12.5-19.868z');opacity:0;}
+    @keyframes floatHeart{0%{transform:translateY(0) scale(.7) rotate(0deg);opacity:.9;}100%{transform:translateY(-55vmin) scale(1.4) rotate(25deg);opacity:0;}}
+
+    /* Swirl */
+    .swirl{position:absolute;width:10vmin;height:10vmin;border:1vmin solid #9d9dff;border-radius:50%;opacity:0;}
+    @keyframes spinSwirl{0%{transform:rotate(0deg) scale(.6);opacity:1;}100%{transform:rotate(720deg) scale(1.4);opacity:0;}}
+
+    /* Expressions (unchanged) */
+    #face.purr   .eye{filter:drop-shadow(0 0 44px rgba(255,182,206,.55));}
+    #face.happy  .eye{background:#ff72d2;}
+    #face.love   .eye{background:#ff41ff;filter:drop-shadow(0 0 38px rgba(255,65,255,.7));}
+    #face.blush  .eye{background:#ff9ab3;}  #face.blush .cheek{opacity:1;}
+    #face.kiss   .eye{background:#ff41ff;filter:drop-shadow(0 0 52px rgba(255,65,255,.85));}
+    #face.scared .eye{background:#41e1ff;filter:drop-shadow(0 0 36px rgba(65,225,255,.75));} #face.scared .brow{opacity:1;top:14%;}
+    #face.angry  .eye{background:#ff4545;} #face.angry .brow{opacity:1;transform:rotate(-15deg);} #face.angry .brow.right{transform:rotate(15deg);} 
+    #face.blink  .eye, #face.winkLeft .eye.left, #face.winkRight .eye.right{height:5vmin;}
+    #face.surprised .eye{height:60vmin;}
+    #face.stare .eye{height:55vmin;filter:drop-shadow(0 0 22px rgba(122,255,39,.9));}
+    #face.crying .eye{height:5vmin;background:#ff4545;}
+
+    /* Motion */
+    @keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-4%);}50%{transform:translateX(4%);}75%{transform:translateX(-2%);}}
+    @keyframes wiggle{0%,100%{transform:rotate(0);}20%{transform:rotate(-10deg);}50%{transform:rotate(10deg);}80%{transform:rotate(-6deg);}}
+    #face.shake{animation:shake .45s cubic-bezier(.36,.07,.19,.97);}  
+    #face.wiggle{animation:wiggle .85s ease-in-out;}
+  </style>
+</head>
+<body>
+  <video id="video" width="640" height="480" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div id="face">
+    <div class="eye left"></div><div class="eye right"></div>
+    <div class="brow left"></div><div class="brow right"></div>
+    <div class="cheek left"></div><div class="cheek right"></div>
+  </div>
+  <div id="decorHost"></div>
+  <script src="https://cdn.jsdelivr.net/npm/handtrackjs@latest/dist/handtrack.min.js"></script>
+  <script>
+    /* DOM setup */
+    const video=document.getElementById('video'); const canvas=document.getElementById('overlay'); const ctx=canvas.getContext('2d');
+    const face=document.getElementById('face'); const host=document.getElementById('decorHost'); const resize=()=>{canvas.width=innerWidth;canvas.height=innerHeight}; resize(); addEventListener('resize',resize);
+
+    /* HandTrack params */
+    const params={flipHorizontal:true,maxNumBoxes:1,iouThreshold:0.4,scoreThreshold:0.45,imageScaleFactor:0.8}; let model=null;
+
+    /* State */
+    let lastPos=null,lastMove=Date.now(); let busyUntil=0,isPet=false; let waveBuf=[],nodBuf=[];
+
+    /* Voice vars */
+    let RMS=0,voiceStart=0,lastLove=0; const TH=0.045,DUR=1000,COOL=2500,LOUD=0.12; navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{const ac=new (AudioContext||webkitAudioContext)(); const src=ac.createMediaStreamSource(s); const an=ac.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize); (function aud(){an.getByteTimeDomainData(buf); let sum=0; buf.forEach(b=>{const v=(b-128)/128; sum+=v*v;}); RMS=Math.sqrt(sum/buf.length); RMS>TH? voiceStart||(voiceStart=Date.now()):voiceStart=0; requestAnimationFrame(aud);})();});
+
+    /* Deco util: hearts / swirl only */
+    const deco=(type,n,d)=>{for(let i=0;i<n;i++){const el=document.createElement('div');el.className=type;host.appendChild(el); el.style.left=Math.random()*100+'%'; el.style.top='55%'; requestAnimationFrame(()=>el.style.animation=`${type==='heart'?'floatHeart':'spinSwirl'} ${d}ms ease-out forwards ${i*120}ms`); setTimeout(()=>el.remove(),d);} };
+
+    /* Expressions helpers */
+    const list=['happy','love','blush','kiss','scared','angry','blink','winkLeft','winkRight','surprised','stare','crying']; const busy=t=>t<busyUntil; const setExpr=(n,d=1200,f=false)=>{if(!f&&busy(Date.now()))return; face.classList.remove(...list.filter(e=>e!==n)); face.classList.add(n); if(d>0&&!['crying'].includes(n)) setTimeout(()=>face.classList.remove(n),d);}; const anim=(a,d)=>{face.classList.add(a); setTimeout(()=>face.classList.remove(a),d);};
+
+    /* Init */
+    handTrack.startVideo(video).then(ok=>{if(ok) handTrack.load(params).then(m=>{model=m;loop();});});
+
+    function loop(){model.detect(video).then(pred=>{ctx.clearRect(0,0,canvas.width,canvas.height); const now=Date.now(); let moved=false;
+      if(voiceStart && now-voiceStart>DUR && now-lastLove>COOL){ lastLove=now; RMS>LOUD? setExpr('scared',1600,true):setExpr('love',2000,true); deco('heart',10,2000); busyUntil=now+1400; voiceStart=0; }
+      if(pred.length){ const [x,y,w,h]=pred[0].bbox; const cx=x+w/2,cy=y+h/2; const px=cx/canvas.width*innerWidth, py=cy/canvas.height*innerHeight; const area=w*h/(canvas.width*canvas.height);
+        if(area>0.8){ setExpr('kiss',1500,true); deco('heart',12,1800); busyUntil=now+1200; }
+        else if(area>0.4){ setExpr('blush',1500); }
+        else if(area<0.15 && !face.classList.contains('crying')) setExpr('stare',0);
+        if(area>0.6 && !face.classList.contains('crying')){ setExpr('crying',0,true); anim('shake',550); deco('swirl',1,2100); busyUntil=now+2300; moved=true; }
+        const r=face.getBoundingClientRect(); if(Math.hypot(px-(r.left+r.width/2), py-(r.top+r.height/2))<r.width*0.28){ if(!isPet){isPet=true; face.classList.add('purr'); setExpr('happy',1400,true); deco('heart',6,1900); busyUntil=now+1100;} } else { if(isPet){isPet=false; face.classList.remove('purr'); face.classList.remove('crying'); } }
+        const thr=canvas.width*0.02; if(lastPos){ const dx=cx-lastPos.x, dy=cy-lastPos.y; const ax=Math.abs(dx), ay=Math.abs(dy); if(ax>thr||ay>thr) moved=true; if(ax>thr&&ax>ay&&!busy(now)){ setExpr(dx>0?'winkRight':'winkLeft',900); anim('shake',380); busyUntil=now+650; }
+          if(ay>thr&&ay>ax&&!busy(now)){ dy>0? setExpr('blink',700): (setExpr('surprised',1200), anim('wiggle',800)); busyUntil=now+650; } }
+        waveBuf.push(cx); if(waveBuf.length>14) waveBuf.shift(); if(waveBuf.length===14&&waveBuf.slice(1).reduce((a,v,i)=>a+(Math.sign(v-waveBuf[i])-Math.sign(waveBuf[i]-waveBuf[i?i-1:0])!==0?1:0),0)>=5&&!busy(now)){ setExpr('happy',1100,true); busyUntil=now+900; waveBuf=[]; }
+        nodBuf.push(cy); if(nodBuf.length>14) nodBuf.shift(); if(nodBuf.length===14&&nodBuf.slice(1).reduce((a,v,i)=>a+(Math.sign(v-nodBuf[i])-Math.sign(nodBuf[i]-nodBuf[i?i-1:0])!==0?1:0),0)>=5&&!busy(now)){ setExpr('blink',850,true); busyUntil=now+750; nodBuf=[]; }
+        lastPos={x:cx,y:cy}; }
+      if(moved) lastMove=now; if(now-lastMove>4500&&!face.classList.contains('crying')) setExpr('stare',0); requestAnimationFrame(loop);});}
+  </script>
+</body>
+</html>
